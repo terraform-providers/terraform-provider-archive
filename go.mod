@@ -1,5 +1,8 @@
-module github.com/hashicorp/terraform-provider-archive
+module github.com/terraform-providers/terraform-provider-archive
 
-go 1.15
+require (
+	github.com/bmatcuk/doublestar v1.2.2
+	github.com/hashicorp/terraform-plugin-sdk/v2 v2.4.3
+)
 
-require github.com/hashicorp/terraform-plugin-sdk/v2 v2.0.3
+go 1.13
