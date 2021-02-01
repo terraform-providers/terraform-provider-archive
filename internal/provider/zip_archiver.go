@@ -84,24 +84,27 @@ func checkMatch(fileName string, excludes []string) (value bool) {
 	return false
 }
 
-func (a *ZipArchiver) ArchiveDir(indirname string, excludes []string) error {
-	_, err := assertValidDir(indirname)
-	if err != nil {
-		return err
+func readSymlinkRecursive(fileName string, recursionlimit int) (realPath string, err error) {
+	currentFile := fileName
+	recursionCount := 0
+	for recursionCount < recursionlimit {
+		dir := filepath.Dir(currentFile)
+		realFileName, err := os.Readlink(fileName)
+		if err != nil {
+			return "", err
+		}
+		realPath := filepath.Join(dir, realFileName)
+		realInfo, err := os.Stat(realPath)
+		if realInfo.Mode()&os.ModeSymlink != os.ModeSymlink {
+			return realPath, nil
+		}
+		recursionCount++
 	}
+	return "", fmt.Errorf("Symlink recursion limit exceeded: %s", fileName)
+}
 
-	// ensure exclusions are OS compatible paths
-	for i := range excludes {
-		excludes[i] = filepath.FromSlash(excludes[i])
-	}
-
-	if err := a.open(); err != nil {
-		return err
-	}
-	defer a.close()
-
-	return filepath.Walk(indirname, func(path string, info os.FileInfo, err error) error {
-
+func (a *ZipArchiver) createWalkFunc(basePath string, indirname string, excludes []string) func(path string, info os.FileInfo, err error) error {
+	return func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return fmt.Errorf("error encountered during file walk: %s", err)
 		}
@@ -110,8 +113,9 @@ func (a *ZipArchiver) ArchiveDir(indirname string, excludes []string) error {
 		if err != nil {
 			return fmt.Errorf("error relativizing file for archival: %s", err)
 		}
+		archivePath := filepath.Join(basePath, relname)
 
-		isMatch := checkMatch(relname, excludes)
+		isMatch := checkMatch(archivePath, excludes)
 
 		if info.IsDir() {
 			if isMatch {
@@ -128,11 +132,23 @@ func (a *ZipArchiver) ArchiveDir(indirname string, excludes []string) error {
 			return err
 		}
 
+		if info.Mode()&os.ModeSymlink == os.ModeSymlink {
+			realPath, err := readSymlinkRecursive(path, 1024)
+			if err != nil {
+				return err
+			}
+			realInfo, err := os.Stat(realPath)
+			if realInfo.IsDir() {
+				return filepath.Walk(realPath, a.createWalkFunc(archivePath, realPath, excludes))
+			}
+			info = realInfo
+		}
+
 		fh, err := zip.FileInfoHeader(info)
 		if err != nil {
 			return fmt.Errorf("error creating file header: %s", err)
 		}
-		fh.Name = filepath.ToSlash(relname)
+		fh.Name = filepath.ToSlash(archivePath)
 		fh.Method = zip.Deflate
 		// fh.Modified alone isn't enough when using a zero value
 		fh.SetModTime(time.Time{})
@@ -147,7 +163,26 @@ func (a *ZipArchiver) ArchiveDir(indirname string, excludes []string) error {
 		}
 		_, err = f.Write(content)
 		return err
-	})
+	}
+}
+
+func (a *ZipArchiver) ArchiveDir(indirname string, excludes []string) error {
+	_, err := assertValidDir(indirname)
+	if err != nil {
+		return err
+	}
+
+	// ensure exclusions are OS compatible paths
+	for i := range excludes {
+		excludes[i] = filepath.FromSlash(excludes[i])
+	}
+
+	if err := a.open(); err != nil {
+		return err
+	}
+	defer a.close()
+
+	return filepath.Walk(indirname, a.createWalkFunc("", indirname, excludes))
 }
 
 func (a *ZipArchiver) ArchiveMultiple(content map[string][]byte) error {
