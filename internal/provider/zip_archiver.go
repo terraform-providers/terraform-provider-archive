@@ -86,10 +86,6 @@ func checkMatch(fileName, indirname string, excludes []string) (value bool, err 
 				return false, fmt.Errorf("error relativizing exclude for archival: %s", err)
 			}
 
-			if err != nil {
-				return false, err
-			}
-
 			if exclude == "" {
 				continue
 			}
