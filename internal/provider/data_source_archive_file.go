@@ -13,7 +13,7 @@ import (
 	"path"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-provider-archive/internal/hashcode"
+	"github.com/terraform-providers/terraform-provider-archive/internal/hashcode"
 )
 
 func dataSourceFile() *schema.Resource {
